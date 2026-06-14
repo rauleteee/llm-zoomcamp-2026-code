@@ -1,1 +1,49 @@
+
+# --- Secrets ---
+# Contains your API key — never commit
 .env
+.env.*
+!.env.example
+
+# --- Python virtual environment ---
+# Recreatable from pyproject.toml / requirements; bloated and OS-specific
+.venv/
+venv/
+env/
+
+# --- Python bytecode and caches ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# --- Jupyter ---
+# Auto-saved checkpoints; not meaningful in git history
+.ipynb_checkpoints/
+
+# --- uv / pip / build artifacts ---
+# uv.lock IS usually committed (it pins exact versions); leave it out of ignore
+*.egg-info/
+build/
+dist/
+*.egg
+
+# --- IDE / editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- OS noise ---
+.DS_Store
+Thumbs.db
+
+# --- Project-specific ---
+# Drop anything else here as it appears: data dumps, cached embeddings, etc.
+# data/
+# *.pkl
+
+*.db
+*.db-shm
+*.db-wal
+*.db*
