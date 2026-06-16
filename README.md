@@ -19,7 +19,7 @@ This README will grow as more modules are completed.
 | # | Module | Status | Highlights |
 |---|--------|--------|------------|
 | 01 | **Agentic RAG** | ✅ Completed | RAG over course lessons, chunking, agent with tool use |
-| 02 | Vector Search | ⏳ Pending | Embeddings, vector DBs, semantic search |
+| 02 | **Vector Search** | ✅ Completed | Embeddings, ONNX local inference, in-memory / sqlite-vec / pgvector |
 | 03 | Orchestration | ⏳ Pending | Building larger LLM pipelines |
 | 04 | Evaluation | ⏳ Pending | Measuring quality, LLM-as-judge |
 | 05 | Monitoring | ⏳ Pending | Observability for LLM apps |
@@ -32,20 +32,24 @@ This README will grow as more modules are completed.
 
 ```
 llm-zoomcamp-2026-code/
-├── 01-agentic-rag/         # Module 1 — completed
-│   ├── ingest.py           # Load lesson markdown from the course repo, build minsearch index
-│   ├── rag_helper.py       # RAG class: search → build context → prompt → LLM, returns answer + token usage
-│   ├── agent.py            # Agentic version with a search tool (toyaikit)
-│   └── rag_ingest.ipynb    # Walkthrough notebook covering Q1–Q6 of the homework
+├── 01-agentic-rag/             # Module 1 — completed
+│   ├── ingest.py               # Load lesson markdown, build minsearch index
+│   ├── rag_helper.py           # RAG class: search → context → prompt → LLM (returns answer + usage)
+│   ├── agent.py                # Agentic version with a search tool (toyaikit)
+│   └── rag_ingest.ipynb        # Walkthrough notebook (Q1–Q6 of the homework)
 │
-├── 02-vector-search/       # (pending)
+├── 02-vector-search/           # Module 2 — completed
+│   ├── vector_search.py        # Embedder + three pluggable engines (in-memory, sqlite-vec, pgvector)
+│   └── vector_search_demo.ipynb# Head-to-head notebook: same data, same embedder, three storage backends
+│
+├── 03-orchestration/           # (pending)
 ├── ...
 │
-├── .env                    # API key + base URL — not committed
+├── .env                        # API key + base URL — not committed
 ├── .gitignore
-├── pyproject.toml          # uv-managed project metadata
+├── pyproject.toml              # uv-managed project metadata
 ├── uv.lock
-└── README.md               # this file
+└── README.md                   # this file
 ```
 
 ---
@@ -57,9 +61,11 @@ llm-zoomcamp-2026-code/
 | Language | Python 3.13 |
 | Env / deps | [`uv`](https://github.com/astral-sh/uv), `.venv` |
 | Notebooks | JupyterLab |
-| LLM access | `openai` SDK against an OpenAI-compatible endpoint (`devstral` model via course infrastructure) |
-| Retrieval | [`minsearch`](https://github.com/alexeygrigorev/minsearch) — tiny in-memory full-text index |
-| Data loading | [`gitsource`](https://github.com/alexeygrigorev/gitsource) — pull files straight from a GitHub repo at a pinned commit |
+| LLM access | `openai` SDK against an OpenAI-compatible endpoint (`devstral` via course infrastructure) |
+| Keyword retrieval | [`minsearch`](https://github.com/alexeygrigorev/minsearch) — tiny in-memory full-text index |
+| Embeddings | [`fastembed`](https://github.com/qdrant/fastembed) — ONNX models running on CPU, no GPU required |
+| Vector storage | NumPy (in-memory), [`sqlite-vec`](https://github.com/asg017/sqlite-vec), [`pgvector`](https://github.com/pgvector/pgvector) |
+| Data loading | [`gitsource`](https://github.com/alexeygrigorev/gitsource) — pull files from a GitHub repo at a pinned commit |
 | Agents | [`toyaikit`](https://github.com/alexeygrigorev/toyaikit) — minimal function-calling agent framework |
 | HTTP | `httpx` (with custom TLS settings for the course's private CA) |
 
@@ -70,7 +76,7 @@ llm-zoomcamp-2026-code/
 ### 1. Clone and enter the project
 
 ```bash
-git clone <this-repo-url>
+git clone https://github.com/rauleteee/llm-zoomcamp-2026-code.git
 cd llm-zoomcamp-2026-code
 ```
 
@@ -139,12 +145,54 @@ python agent.py                       # standalone agent run
 
 ---
 
+## Module 2: Vector Search
+
+Module 2 trades keyword matching for semantic search. Same dataset (the chunked course lessons from module 1), but instead of matching words, we match *meaning* — by embedding text into a vector space and finding nearest neighbours.
+
+### What's inside
+
+1. **Local ONNX embedder** — `vector_search.py` wraps `fastembed` with the `BAAI/bge-small-en-v1.5` model. Runs on CPU, no GPU, no API costs.
+2. **Three storage engines** sharing one interface (`add` / `search` / `close`):
+   - `InMemoryEngine` — NumPy matrix, dot-product search. Zero setup.
+   - `SQLiteEngine` — `sqlite-vec` extension, embedded DB in a `.db` file.
+   - `PGVectorEngine` — Postgres + `pgvector`, real database with cosine-distance indexes.
+3. **Embedding sanity check** — short notebook section confirming that semantically related phrases really do produce close vectors (*"dog chasing a ball"* vs *"puppy playing fetch"* scores higher than either against *"financial market analysis"*).
+4. **Head-to-head benchmark** — same query, same data, all three engines side by side. Latency, top result, top score.
+
+### Run it
+
+```bash
+cd 02-vector-search
+jupyter lab vector_search_demo.ipynb
+```
+
+For the pgvector engine you need Postgres running. The fastest path:
+
+```bash
+docker run -d --name pgvector \
+    -e POSTGRES_PASSWORD=postgres \
+    -p 5432:5432 \
+    pgvector/pgvector:pg16
+```
+
+The notebook gracefully skips pgvector if it can't connect, so the rest still works.
+
+### Key takeaways from this module
+
+- **Embeddings are the interesting part; storage is plumbing.** Swap the database, keep the model, and you get the same neighbours. Picking a vector DB is an ops decision, not an ML one.
+- **`sqlite-vec` is shockingly capable for personal projects.** A single file, no daemon, full vector search. Perfect for prototypes and edge deployments.
+- **Local CPU embeddings are completely viable.** `fastembed` + ONNX runs in seconds on a laptop, sidestepping the cost and latency of calling an embeddings API.
+- **Scores from different engines aren't directly comparable** (cosine vs L2 vs negative-distance). What matters is the *ordering*, and across all three engines, ordering is stable.
+
+---
+
 ## Conventions used in this repo
 
 - One folder per module, named with a two-digit prefix matching the course (`01-`, `02-`, ...).
 - Notebooks are scratch space and walkthroughs; reusable logic lives in `.py` files.
 - Token-counting and cost-related code reads `response.usage` directly rather than estimating.
 - All external LLM calls go through a single `OpenAI` client configured from `.env`.
+- Each module folder ships with at least one `.py` for reusable code and one `.ipynb` to walk through it.
 
 ---
 
@@ -156,6 +204,7 @@ Beyond the course content itself, this repo doubles as a sandbox for general AI-
 - Keeping retrieval and generation decoupled, so I can swap either independently.
 - Watching token counts the way I'd watch latency in a regular backend.
 - Letting models "think out loud" via tool calls instead of cramming everything into one prompt.
+- Treating the database under the embeddings as an ops choice, not a modeling choice.
 
 ---
 
@@ -163,6 +212,7 @@ Beyond the course content itself, this repo doubles as a sandbox for general AI-
 
 - The [LLM Zoomcamp](https://github.com/DataTalksClub/llm-zoomcamp) team at [DataTalksClub](https://datatalks.club/) for putting together a genuinely excellent free course.
 - [Alexey Grigorev](https://github.com/alexeygrigorev) for the supporting libraries (`minsearch`, `gitsource`, `toyaikit`) that make the course's project-based approach possible.
+- The [`sqlite-vec`](https://github.com/asg017/sqlite-vec), [`pgvector`](https://github.com/pgvector/pgvector), and [`fastembed`](https://github.com/qdrant/fastembed) maintainers — vector search would be a much heavier lift without them.
 
 ---
 
