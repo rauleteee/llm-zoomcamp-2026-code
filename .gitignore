@@ -47,3 +47,6 @@ Thumbs.db
 *.db-shm
 *.db-wal
 *.db*
+
+03-orchestration/.env
+03-orchestration/.env.backup

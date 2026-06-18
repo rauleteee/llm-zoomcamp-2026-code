@@ -1,0 +1,39 @@
+Q1: After trying the same prompt in ChatGPT vs Kestra's AI Copilot, what is the primary reason Copilot generates better Kestra flows?
+
+* Copilot has access to current Kestra plugin documentation. This is what we have learnt about RAG, where you can feed the LLM model with our Knowledge Base, inserting all the Kestra plugin documentation into the LLM in order to have more accurate responses.
+
+Q2: Run both 1_chat_without_rag.yaml and 2_chat_with_rag.yaml and compare their outputs. Both ask: "Which features were released in Kestra 1.1?"
+
+What difference do you observe?
+
+* RAG version provides specific, accurate feature details grounded in the documentation. As we said before, when you add RAG to your software, you are providing more information that let's the LLM to return more accurate solutions.
+
+Q3: Run 4_simple_agent.yaml twice:
+
+First with summary_length = short
+Second with summary_length = long
+Check the token usage logged at the end of each execution. How does token usage differ between short and long summaries for the multilingual_agent task?
+
+* No significant difference (within 10% variance).
+----- Loops multilingual_totalTokens: [i=0, i=1] -------
+- Short:  multilingual_totalTokens: [365, 354]
+- Long:  multilingual_totalTokens: [475, 497]
+
+Q4: Run 5_web_research_agent.yaml with the default research topic about data orchestration trends.
+
+In this flow, who decides when to use the web search tool?
+
+* The agent autonomously decides based on the prompt and system message. You specify the GOAL, then the agent specifies how to achieve it. In the yaml file we can see different variables, such as systemMessage (which encourages searching), contentRetrievers and tools that are declared as the capabilities of the agent. But there is no explicit Search task in tasks: the only top level task is research_agent which is the manager to call Search function inside the agent's autonomous loop.
+
+Q5: Examine 6_multi_agent_research.yaml and run it with the default company (kestra.io).
+
+What is the role of the research agent in this multi-agent system?
+
+* It serves as a tool for the main agent to gather web data. If you look at the reserach_agent, it is nested inside the main agent's loop. Kesstra explicitly exposes an Agent-As-A-Tool wrapper, which means "let one agent invoke another one the same way it would call any other tool".
+
+Q6: Based on what you learned in this module, for production workflows requiring deterministic, repeatable results with strict compliance requirements (e.g., financial reporting, workflows in highly regulated industries), which approach is most appropriate?
+
+* Always use AI agents for maximum flexibility and adaption. As we have seen in previous tasks, the comparisson between a search that has been triggered by a task without RAG or agentic loop as a tool, it means that the results are poorly specific and mistaken. If you implement RAG solutions with AI agents that are looping the queery to find the best result and previously inserting some Knowledge Database inside the LLM, it will respond in a more specific way.
+
+
+
