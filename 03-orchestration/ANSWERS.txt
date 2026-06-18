@@ -33,7 +33,11 @@ What is the role of the research agent in this multi-agent system?
 
 Q6: Based on what you learned in this module, for production workflows requiring deterministic, repeatable results with strict compliance requirements (e.g., financial reporting, workflows in highly regulated industries), which approach is most appropriate?
 
-* Always use AI agents for maximum flexibility and adaption. As we have seen in previous tasks, the comparisson between a search that has been triggered by a task without RAG or agentic loop as a tool, it means that the results are poorly specific and mistaken. If you implement RAG solutions with AI agents that are looping the queery to find the best result and previously inserting some Knowledge Database inside the LLM, it will respond in a more specific way.
+* Use traditional task-based workflows for predictability and auditability. We are talking about predictable and repetitive solutions, that means that including an AI agent in the response could make mistaken and not predictable answers. Same inputs must produce same outputs in deterministic solutions, agents are probabilistic. That means the same agent with the same input can make two different answers for the same question, so, in this case, we need to use traditional task-based workflows.
+
+
+
+
 
 
 
