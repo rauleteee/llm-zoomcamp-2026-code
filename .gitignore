@@ -50,4 +50,4 @@ Thumbs.db
 
 03-orchestration/.env
 03-orchestration/.env.backup02-vector-search/onnx/
-03-vector-search/models/
+02-vector-search/models/
