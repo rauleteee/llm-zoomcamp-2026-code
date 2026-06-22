@@ -19,8 +19,8 @@ This README will grow as more modules are completed.
 | # | Module | Status | Highlights |
 |---|--------|--------|------------|
 | 01 | **Agentic RAG** | ✅ Completed | RAG over course lessons, chunking, agent with tool use |
-| 02 | **Vector Search** | ✅ Completed | Embeddings, ONNX local inference, in-memory / sqlite-vec / pgvector |
-| 03 | Orchestration | ⏳ Pending | Building larger LLM pipelines |
+| 02 | **Vector Search** | ✅ Completed | ONNX embeddings, hand-rolled cosine, minsearch, hybrid search with RRF |
+| 03 | **Orchestration** | ✅ Completed | Kestra flows, RAG vs agentic AI, multi-agent systems |
 | 04 | Evaluation | ⏳ Pending | Measuring quality, LLM-as-judge |
 | 05 | Monitoring | ⏳ Pending | Observability for LLM apps |
 | 06 | Best Practices | ⏳ Pending | Hybrid search, prompt engineering, cost control |
@@ -39,10 +39,16 @@ llm-zoomcamp-2026-code/
 │   └── rag_ingest.ipynb        # Walkthrough notebook (Q1–Q6 of the homework)
 │
 ├── 02-vector-search/           # Module 2 — completed
-│   ├── vector_search.py        # Embedder + three pluggable engines (in-memory, sqlite-vec, pgvector)
-│   └── vector_search_demo.ipynb# Head-to-head notebook: same data, same embedder, three storage backends
+│   ├── download.py             # Fetches the ONNX model from HuggingFace
+│   ├── embedder.py             # Embedder class (encode / encode_batch)
+│   ├── homework.ipynb          # Full Q1–Q6 walkthrough: by-hand → library → hybrid
+│   └── README.md               # Module-specific deep dive
 │
-├── 03-orchestration/           # (pending)
+├── 03-orchestration/           # Module 3 — completed
+│   ├── flows/                  # Kestra YAML flows
+│   └── README.md               # Module-specific deep dive
+│
+├── 04-evaluation/              # (pending)
 ├── ...
 │
 ├── .env                        # API key + base URL — not committed
@@ -62,11 +68,12 @@ llm-zoomcamp-2026-code/
 | Env / deps | [`uv`](https://github.com/astral-sh/uv), `.venv` |
 | Notebooks | JupyterLab |
 | LLM access | `openai` SDK against an OpenAI-compatible endpoint (`devstral` via course infrastructure) |
-| Keyword retrieval | [`minsearch`](https://github.com/alexeygrigorev/minsearch) — tiny in-memory full-text index |
-| Embeddings | [`fastembed`](https://github.com/qdrant/fastembed) — ONNX models running on CPU, no GPU required |
-| Vector storage | NumPy (in-memory), [`sqlite-vec`](https://github.com/asg017/sqlite-vec), [`pgvector`](https://github.com/pgvector/pgvector) |
+| Keyword retrieval | [`minsearch`](https://github.com/alexeygrigorev/minsearch) — tiny in-memory full-text + vector index |
+| Embeddings | [`onnxruntime`](https://onnxruntime.ai/) + `tokenizers` — `all-MiniLM-L6-v2` on CPU, no GPU/PyTorch/CUDA |
 | Data loading | [`gitsource`](https://github.com/alexeygrigorev/gitsource) — pull files from a GitHub repo at a pinned commit |
 | Agents | [`toyaikit`](https://github.com/alexeygrigorev/toyaikit) — minimal function-calling agent framework |
+| Orchestration | [Kestra](https://kestra.io) — workflow engine with native AI Agent / RAG / MCP plugins |
+| LLM providers (via Kestra) | Google Gemini, OpenAI; Tavily for web search |
 | HTTP | `httpx` (with custom TLS settings for the course's private CA) |
 
 ---
@@ -112,8 +119,10 @@ BASE_URL=https://your-llm-endpoint/v1
 
 ```bash
 cd 01-agentic-rag
-jupyter lab        # open rag_ingest.ipynb
+uv run jupyter lab        # open rag_ingest.ipynb
 ```
+
+Each module folder also has its own `README.md` with module-specific setup and conclusions.
 
 ---
 
@@ -129,15 +138,7 @@ The first module builds a Retrieval-Augmented Generation system over the course 
 4. **Chunking** — splits long lessons into overlapping windows to keep prompts smaller and retrieval more precise.
 5. **Agentic version** — `agent.py` exposes the chunked search as a tool and lets the LLM call it autonomously, iterating until it has enough context to answer.
 
-### Run it
-
-```bash
-cd 01-agentic-rag
-jupyter lab rag_ingest.ipynb         # full Q1–Q6 walkthrough
-python agent.py                       # standalone agent run
-```
-
-### Key takeaways from this module
+### Key takeaways
 
 - **Chunking dramatically reduces prompt size** without hurting answer quality — I saw ~3× fewer input tokens after switching to 2000-char windows with 1000-char overlap.
 - **Agentic loops trade cost for adaptability.** A plain RAG pipeline runs once; an agent decides when (and how often) to search, and can retry with different keywords if results are weak.
@@ -147,52 +148,59 @@ python agent.py                       # standalone agent run
 
 ## Module 2: Vector Search
 
-Module 2 trades keyword matching for semantic search. Same dataset (the chunked course lessons from module 1), but instead of matching words, we match *meaning* — by embedding text into a vector space and finding nearest neighbours.
+Module 2 trades keyword matching for semantic search. Same dataset (the chunked course lessons from module 1), but instead of matching words we match *meaning* — by embedding text into a vector space and finding nearest neighbours. The homework redo uses the **lightweight ONNX runtime** (no PyTorch, no CUDA — install is ~30× smaller than `sentence-transformers`).
 
 ### What's inside
 
-1. **Local ONNX embedder** — `vector_search.py` wraps `fastembed` with the `BAAI/bge-small-en-v1.5` model. Runs on CPU, no GPU, no API costs.
-2. **Three storage engines** sharing one interface (`add` / `search` / `close`):
-   - `InMemoryEngine` — NumPy matrix, dot-product search. Zero setup.
-   - `SQLiteEngine` — `sqlite-vec` extension, embedded DB in a `.db` file.
-   - `PGVectorEngine` — Postgres + `pgvector`, real database with cosine-distance indexes.
-3. **Embedding sanity check** — short notebook section confirming that semantically related phrases really do produce close vectors (*"dog chasing a ball"* vs *"puppy playing fetch"* scores higher than either against *"financial market analysis"*).
-4. **Head-to-head benchmark** — same query, same data, all three engines side by side. Latency, top result, top score.
+1. **ONNX embedder** — `download.py` pulls `Xenova/all-MiniLM-L6-v2`; `embedder.py` provides a clean `encode` / `encode_batch` interface.
+2. **Hand-rolled vector search** — build the corpus matrix, score with `X.dot(v)`, no library involved. The whole point: prove to yourself that vector search is just a matrix multiply.
+3. **Library-backed search** — same operation through `minsearch.VectorSearch`, showing that the library is bookkeeping, not magic.
+4. **Vector vs text comparison** — running the same query against `VectorSearch` and `Index` to see where each method wins.
+5. **Hybrid search with RRF** — combining vector and text rankings using Reciprocal Rank Fusion (`1 / (k + rank)`, `k=60`). Documents that appear in both lists rise to the top by consensus.
 
-### Run it
+Full walkthrough in [`02-vector-search/README.md`](./02-vector-search/README.md).
 
-```bash
-cd 02-vector-search
-jupyter lab vector_search_demo.ipynb
-```
+### Key takeaways
 
-For the pgvector engine you need Postgres running. The fastest path:
+- **The embedder is the intelligence; everything else is logistics.** Pick the model carefully; the database is an ops decision.
+- **Cosine similarity is just a dot product when vectors are normalized.** The single fact that makes semantic search fast at scale.
+- **Vector and text search are complementary, not competitive.** Text wins on exact terms (names, codes, jargon). Vector wins on meaning and paraphrasing. Hybrid wins almost everywhere.
+- **Hybrid search is the production default.** RRF is one of the simplest and most effective ways to fuse multiple rankings — and it works because consensus across methods beats individual brilliance.
+- **Start with text search; upgrade only when it breaks.** Vector search adds real overhead. Most products handle 80% of queries with keyword search at a fraction of the operational cost.
 
-```bash
-docker run -d --name pgvector \
-    -e POSTGRES_PASSWORD=postgres \
-    -p 5432:5432 \
-    pgvector/pgvector:pg16
-```
+---
 
-The notebook gracefully skips pgvector if it can't connect, so the rest still works.
+## Module 3: Orchestration
 
-### Key takeaways from this module
+Module 3 zooms out from "build a single RAG call" to "operate a workflow that may or may not need AI at all." The tool here is **Kestra**, an open-source orchestrator with native plugins for AI agents, RAG, content retrievers, and MCP tools.
 
-- **Embeddings are the interesting part; storage is plumbing.** Swap the database, keep the model, and you get the same neighbours. Picking a vector DB is an ops decision, not an ML one.
-- **`sqlite-vec` is shockingly capable for personal projects.** A single file, no daemon, full vector search. Perfect for prototypes and edge deployments.
-- **Local CPU embeddings are completely viable.** `fastembed` + ONNX runs in seconds on a laptop, sidestepping the cost and latency of calling an embeddings API.
-- **Scores from different engines aren't directly comparable** (cosine vs L2 vs negative-distance). What matters is the *ordering*, and across all three engines, ordering is stable.
+### What's inside
+
+YAML flows that progressively layer in capabilities:
+
+1. **Plain chat** — direct LLM call, no retrieval. Baseline.
+2. **Chat with RAG** — same model, but grounded in indexed documentation. Shows the accuracy lift from giving the model real context.
+3. **Simple agent** — declarative LLM with structured prompts.
+4. **Web research agent** — agent decides autonomously when to invoke the Tavily search tool. The flow specifies the goal; the model figures out the how.
+5. **Multi-agent system** — a senior analyst agent delegates web research to a specialized agent exposed as a tool (`io.kestra.plugin.ai.tool.AIAgent`).
+
+### Key takeaways
+
+- **Context is usually the bug.** When an LLM gives wrong answers, the model itself is rarely at fault — what's missing is current data, the right tool, or grounded sources. RAG and tools are how you fix that.
+- **You specify the goal, the agent decides the how.** In an agentic flow, there's no explicit "call search now" step. The agent is given a goal, a system message that nudges it, and a set of capabilities. The execution path emerges at runtime.
+- **Agents-as-tools is a powerful composition pattern.** A specialist agent (narrow scope, narrow toolkit) wrapped as a tool for an orchestrator agent (broad scope, planning) cleanly separates concerns.
+- **Agents are non-deterministic. That's a feature *and* a bug.** Great for research, exploration, fuzzy questions. Terrible for financial reporting, audits, regulated workflows. For those, use traditional task-based pipelines: explicit steps, same inputs → same outputs, code-reviewable, auditable.
+- **Agents aren't an upgrade. They're a tool for a specific class of problem.** Pick based on requirements, not fashion.
 
 ---
 
 ## Conventions used in this repo
 
 - One folder per module, named with a two-digit prefix matching the course (`01-`, `02-`, ...).
+- Each module folder has its own `README.md` with the deep dive; this root README is the table of contents.
 - Notebooks are scratch space and walkthroughs; reusable logic lives in `.py` files.
 - Token-counting and cost-related code reads `response.usage` directly rather than estimating.
 - All external LLM calls go through a single `OpenAI` client configured from `.env`.
-- Each module folder ships with at least one `.py` for reusable code and one `.ipynb` to walk through it.
 
 ---
 
@@ -205,6 +213,7 @@ Beyond the course content itself, this repo doubles as a sandbox for general AI-
 - Watching token counts the way I'd watch latency in a regular backend.
 - Letting models "think out loud" via tool calls instead of cramming everything into one prompt.
 - Treating the database under the embeddings as an ops choice, not a modeling choice.
+- Picking the right execution model — deterministic pipeline vs. agentic loop — based on the requirement, not the hype.
 
 ---
 
@@ -212,7 +221,8 @@ Beyond the course content itself, this repo doubles as a sandbox for general AI-
 
 - The [LLM Zoomcamp](https://github.com/DataTalksClub/llm-zoomcamp) team at [DataTalksClub](https://datatalks.club/) for putting together a genuinely excellent free course.
 - [Alexey Grigorev](https://github.com/alexeygrigorev) for the supporting libraries (`minsearch`, `gitsource`, `toyaikit`) that make the course's project-based approach possible.
-- The [`sqlite-vec`](https://github.com/asg017/sqlite-vec), [`pgvector`](https://github.com/pgvector/pgvector), and [`fastembed`](https://github.com/qdrant/fastembed) maintainers — vector search would be a much heavier lift without them.
+- The [Kestra](https://kestra.io) team for an orchestrator that takes AI workflows seriously as first-class citizens.
+- The maintainers of [`onnxruntime`](https://onnxruntime.ai), [`sqlite-vec`](https://github.com/asg017/sqlite-vec), and [`pgvector`](https://github.com/pgvector/pgvector) — vector search would be a much heavier lift without them.
 
 ---
 

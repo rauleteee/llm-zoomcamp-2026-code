@@ -5,12 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "fastembed>=0.8.0",
     "gitsource>=0.0.5",
     "httpx>=0.28.1",
     "jupyter>=1.1.1",
     "minsearch>=0.1.0",
     "numpy>=2.4.6",
+    "onnxruntime>=1.27.0",
     "openai>=2.41.1",
     "pandas>=3.0.3",
     "pgvector>=0.4.2",
@@ -19,5 +19,13 @@ dependencies = [
     "requests>=2.34.2",
     "sqlite-vec>=0.1.9",
     "sqlitesearch>=0.1.0",
+    "tokenizers>=0.23.1",
     "toyaikit>=0.0.11",
+    "tqdm>=4.68.2",
+]
+
+[dependency-groups]
+dev = [
+    "huggingface-hub>=1.19.0",
+    "jupyter>=1.1.1",
 ]
