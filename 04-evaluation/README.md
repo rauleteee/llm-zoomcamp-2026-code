@@ -8,6 +8,23 @@ This homework generates a test dataset, runs all three search methods on it, and
 
 ---
 
+## At a glance
+
+**The pipeline — how we turn documents into a scored test set:**
+
+![Evaluation pipeline: A to Q* to A'](images/evaluation-pipeline.png)
+
+We build ground truth synthetically: an LLM writes 5 questions (**Q\***) from each known lesson page (**A**). Each search method then returns its top-5 pages (**A'**), and we score whether the source page **A** is in that list. Because every question was generated *from* a known page, the correct answer is labeled for free.
+
+**The results — what we measured and which method won:**
+
+![Evaluation results: method comparison and RRF k-tuning](images/evaluation-results.png)
+
+- **Left — method comparison.** Two metrics across 360 questions: **Hit Rate @5** (is the correct page anywhere in the top 5?) and **MRR** (how high up is it — rank 1 → 1.0, rank 2 → 0.5). Hybrid wins on both because text and vector miss *different* queries, so fusing them beats either alone.
+- **Right — tuning the hybrid fusion.** Hybrid fuses the two ranked lists with Reciprocal Rank Fusion, `RRF(d) = Σ 1/(k + rank(d))`. A small `k` lets a rank-1 hit dominate; `k=1` is best, and 50/100/200 saturate to identical scores (the parameter has flattened out).
+
+---
+
 ## The mental model: why this is harder than it sounds
 
 Evaluating a search system has a chicken-and-egg problem:
