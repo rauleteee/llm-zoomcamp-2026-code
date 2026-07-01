@@ -21,7 +21,7 @@ This README will grow as more modules are completed.
 | 01 | **Agentic RAG** | ✅ Completed | RAG over course lessons, chunking, agent with tool use |
 | 02 | **Vector Search** | ✅ Completed | ONNX embeddings, hand-rolled cosine, minsearch, hybrid search with RRF |
 | 03 | **Orchestration** | ✅ Completed | Kestra flows, RAG vs agentic AI, multi-agent systems |
-| 04 | Evaluation | ⏳ Pending | Measuring quality, LLM-as-judge |
+| 04 | **Evaluation** | ✅ Completed | Ground truth generation, Hit Rate / MRR, hybrid wins (k=1) |
 | 05 | Monitoring | ⏳ Pending | Observability for LLM apps |
 | 06 | Best Practices | ⏳ Pending | Hybrid search, prompt engineering, cost control |
 | 07 | Project Example | ⏳ Pending | End-to-end reference project |
@@ -48,7 +48,14 @@ llm-zoomcamp-2026-code/
 │   ├── flows/                  # Kestra YAML flows
 │   └── README.md               # Module-specific deep dive
 │
-├── 04-evaluation/              # (pending)
+├── 04-evaluation/              # Module 4 — completed
+│   ├── ground-truth.csv        # 360 LLM-generated questions, each tagged with source filename
+│   ├── homework.ipynb          # Q1–Q6 walkthrough: ground-truth gen → Hit Rate / MRR → hybrid tuning
+│   └── README.md               # Module-specific deep dive
+│
+├── bacterio_compat.py          # Shim: course helpers re-implemented on chat.completions for the course endpoint
+│
+├── 05-monitoring/              # (pending)
 ├── ...
 │
 ├── .env                        # API key + base URL — not committed
@@ -68,6 +75,7 @@ llm-zoomcamp-2026-code/
 | Env / deps | [`uv`](https://github.com/astral-sh/uv), `.venv` |
 | Notebooks | JupyterLab |
 | LLM access | `openai` SDK against an OpenAI-compatible endpoint (`devstral` via course infrastructure) |
+| Structured output | Pydantic + Chat Completions JSON mode (via `bacterio_compat.py`) |
 | Keyword retrieval | [`minsearch`](https://github.com/alexeygrigorev/minsearch) — tiny in-memory full-text + vector index |
 | Embeddings | [`onnxruntime`](https://onnxruntime.ai/) + `tokenizers` — `all-MiniLM-L6-v2` on CPU, no GPU/PyTorch/CUDA |
 | Data loading | [`gitsource`](https://github.com/alexeygrigorev/gitsource) — pull files from a GitHub repo at a pinned commit |
@@ -194,6 +202,45 @@ YAML flows that progressively layer in capabilities:
 
 ---
 
+## Module 4: Evaluation
+
+Modules 1 and 2 built three search methods (keyword, vector, hybrid) and left the most important question open: **which one actually works best?** Module 4 closes that loop. We generate a ground-truth question set with an LLM, then measure each method against it with Hit Rate and MRR.
+
+### What's inside
+
+1. **Ground-truth generation** — for each lesson page, the LLM writes 5 plausible student questions answered by that page. Because the question came from a known page, we know the correct answer in advance. Pattern: **A → Q\* → A'**.
+2. **Structured output via Pydantic** — questions come back as typed `Questions` objects, not free-form text. Reliable downstream parsing.
+3. **Search evaluation** — `compute_relevance`, `hit_rate`, `mrr`, and a generic `evaluate(ground_truth, search_function)` wrapper that runs any search method against the full 360-question set.
+4. **Hybrid tuning** — sweep over the RRF constant `k` ∈ {1, 50, 100, 200} and pick the value that maximizes MRR.
+
+Full walkthrough in [`04-evaluation/README.md`](./04-evaluation/README.md).
+
+### Results
+
+| Method | Hit Rate | MRR |
+|---|---:|---:|
+| Text search | 0.758 | 0.594 |
+| Vector search | 0.725 | 0.549 |
+| **Hybrid (k=1)** | **0.839** | **0.648** |
+
+### Key takeaways
+
+- **Measurement overrides intuition.** Going in, the expectation was "vector search will beat text search on paraphrased questions." The data said otherwise — text outperformed vector on this corpus. The only way to know was to measure.
+- **Hybrid wins, but the gap is smaller than the hype suggests.** RRF lifts MRR ~9% above text-only. Real, but not magical. In a tight ops budget, text-only is a defensible choice.
+- **Why hybrid wins isn't sophistication — it's consensus.** Two independent methods agreeing on a result is a stronger signal than either method's individual confidence.
+- **Synthetic data inflates the numbers.** LLM-generated questions share vocabulary patterns with their source documents. Treat these scores as upper bounds; real user queries will perform worse.
+- **Search is the foundation everything else stands on.** If retrieval is bad, no amount of prompt engineering or agent orchestration can save the answer. That's why this module spends the most time on retrieval before touching RAG quality or agent metrics.
+
+---
+
+## A note on `bacterio_compat.py`
+
+The course's helpers assume the OpenAI Responses API (`responses.parse` with `text_format=PydanticModel`). The course endpoint used for this work only fully supports Chat Completions, and even its partial Responses support doesn't enforce structured output. So `bacterio_compat.py` ships drop-in replacements (`llm_structured`, `llm_structured_retry`) built on `chat.completions.create` with `response_format={"type": "json_object"}` and the Pydantic schema embedded in the system prompt.
+
+Same function names, same arguments — notebooks just import from `bacterio_compat` instead of `evaluation_utils`. Anyone running this on the real OpenAI API can swap the import back.
+
+---
+
 ## Conventions used in this repo
 
 - One folder per module, named with a two-digit prefix matching the course (`01-`, `02-`, ...).
@@ -214,6 +261,7 @@ Beyond the course content itself, this repo doubles as a sandbox for general AI-
 - Letting models "think out loud" via tool calls instead of cramming everything into one prompt.
 - Treating the database under the embeddings as an ops choice, not a modeling choice.
 - Picking the right execution model — deterministic pipeline vs. agentic loop — based on the requirement, not the hype.
+- Defining "good" as a number before iterating, instead of trusting intuition.
 
 ---
 
